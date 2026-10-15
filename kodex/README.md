@@ -14,6 +14,18 @@ The launcher keeps configuration and sessions in `%LOCALAPPDATA%\KoDex`. On firs
 
 Python 3 is needed for the bridge. It uses only the Python standard library, communicates over local standard input/output, and does not open a network port.
 
+## Standalone desktop MVP
+
+The Windows build is at `kodex\dist\KoDex.exe`. Run it directly, or rebuild from source with `Start-KoDex-Desktop.ps1`:
+
+```powershell
+& .\kodex\Start-KoDex-Desktop.ps1
+```
+
+This Windows desktop UI is separate from the official Codex app. It includes local Ollama chat, a task list, one-click launch buttons for VS Code/Arduino IDE/FreeCAD/MATLAB, MathWorks project links, and a brain-network-with-light icon. The packaged executable includes its Python runtime. Chat works offline when Ollama is running and its model has already been downloaded. Open Ollama and install a model first if none appears in the model selector.
+
+This is the first runnable desktop shell. Voice, REA, richer CAD/robotics workflows, academic open course catalogs, and broader security resources remain later additions.
+
 ## Laptop integrations
 
 KoDex can list the engineering integrations it recognizes and the apps registered in the current Windows Start menu. It can open a discovered app by exact display name. Initial task tools cover local task add/list/complete, opening VS Code, Arduino IDE, FreeCAD, and MATLAB, creating a basic FreeCAD box, compiling an Arduino sketch, and running an existing MATLAB `.m` file. Arduino compile does not upload firmware.
