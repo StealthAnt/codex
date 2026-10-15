@@ -20,6 +20,7 @@ The Windows build is at `kodex\dist\KoDex.exe`. Run it directly. To rebuild from
 
 ```powershell
 python -m pip install pyinstaller
+npm ci --prefix kodex\rea
 pyinstaller kodex\build\KoDex.spec --noconfirm --clean --distpath kodex\dist --workpath kodex\build\pyinstaller
 ```
 
@@ -27,7 +28,11 @@ This Windows desktop UI is separate from the official Codex app. It includes loc
 
 ChatGPT uses the installed Codex CLI account session, runs in an ephemeral session, and starts with read-only sandbox access. Claude API and Qwen API require their own provider keys; KoDex encrypts saved keys with Windows DPAPI for the signed-in Windows account. Cloud requests send the current conversation to that provider and may be billed or limited under the provider's account. Qwen API keys are region-bound, so its base URL must match the key. Claude Code uses the installed `claude` CLI and its own OAuth sign-in in plan mode; it is unavailable until that CLI is installed. API keys are entered inside KoDex and are never requested in chat.
 
-The Workspace page grants selected folders and lets the user attach UTF-8 text files up to 200 KB. ChatGPT and Claude Code are limited to read-only mode in the current desktop shell; KoDex does not yet apply generated edits or run commands from chat. The desktop chat supports push-to-talk dictation, optional spoken replies, and local voice commands to add, list, or complete tasks. It does not listen continuously. Windows speech recognition and microphone access are required. The separate `Start-KoDexVoice.ps1` helper also supports task completion. The REA tools available to the coding session are not bundled in KoDex.
+The Workspace page grants selected folders and lets the user attach UTF-8 text files up to 200 KB. Chat can prepare complete file edits and supported app actions as a review plan. KoDex displays a diff, creates a backup before replacing an existing file, and waits for separate approval before applying edits or running actions. Plans can open VS Code, Arduino IDE, FreeCAD, or MATLAB; create a FreeCAD box; compile an Arduino sketch without uploading; or run a MATLAB `.m` file. Arbitrary shell commands are not accepted as app actions. Every target path must remain inside the selected approved workspace. ChatGPT and Claude Code remain in their providers' read-only modes; KoDex applies only the explicit, user-approved plan itself.
+
+The chat also supports push-to-talk dictation, optional spoken replies, and local voice commands to add, list, or complete tasks. It does not listen continuously. Windows speech recognition and microphone access are required. The separate `Start-KoDexVoice.ps1` helper also supports task completion.
+
+KoDex bundles the official `rea-agents` npm package (currently pinned at 6.5.0) in the Windows executable. Build it with `npm ci --prefix kodex\rea` first. REA analysis runs locally and can statically analyze an approved JavaScript/Electron app archive or file; reports can be added to KoDex chat. Node.js 22.19+, 24.11+, or 26+ is required at runtime. The KoDex REA page can also install the package into `%LOCALAPPDATA%\KoDex\rea` if it is not bundled. REA-authored code is MIT-licensed; its bundled third-party materials retain their own notices. REA does not include licenses or activation for commercial analysis tools such as IDA, Hopper, or JEB. See `kodex\rea\LICENSE`, `kodex\rea\DISCLAIMER.md`, and `kodex\rea\THIRD_PARTY_NOTICES.md`.
 
 ## Laptop integrations
 

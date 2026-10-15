@@ -1,8 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+from PyInstaller.building.datastruct import Tree
 
 KODEX_DIR = Path(SPECPATH).parent.resolve()
+REA_NODE_MODULES = KODEX_DIR / 'rea' / 'node_modules'
+if not (REA_NODE_MODULES / 'rea-agents' / 'scripts' / 'rea.mjs').is_file():
+    raise SystemExit('REA is not downloaded. Run npm ci --prefix kodex/rea before building KoDex.')
 
 a = Analysis(
     [str(KODEX_DIR / 'desktop_app.py')],
@@ -20,6 +24,7 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+a.datas += Tree(str(REA_NODE_MODULES), prefix='rea/node_modules')
 pyz = PYZ(a.pure)
 
 exe = EXE(
