@@ -1,16 +1,30 @@
 # KoDex
 
-KoDex is a personal launcher and workspace profile for this fork of OpenAI's Codex CLI. It is a community-maintained fork, not the official Codex desktop app. The upstream engine remains separately licensed under Apache-2.0; see the repository's `LICENSE` and `NOTICE` files.
+KoDex is a personal launcher and workspace profile for this fork of OpenAI's Codex CLI. It is a community-maintained fork, distinct from the official Codex desktop app. The upstream engine remains separately licensed; see the repository's `LICENSE` and `NOTICE` files.
 
 ## Windows setup
 
-The upstream source currently supports Windows builds through WSL2. Install/build the engine using [`../docs/install.md`](../docs/install.md), then make its `codex.exe` available on Windows `PATH`. Start KoDex from PowerShell:
+Build or install the engine using [`../docs/install.md`](../docs/install.md), then make its `codex.exe` available on Windows `PATH`. Start KoDex from PowerShell:
 
 ```powershell
 & .\kodex\Start-KoDex.ps1
 ```
 
-The launcher sets `CODEX_HOME` to `%LOCALAPPDATA%\KoDex`, keeping KoDex's configuration, sessions, and credentials separate from an existing Codex profile. Do not copy credentials between those profiles.
+The launcher keeps configuration and sessions in `%LOCALAPPDATA%\KoDex`. On first launch, it adds a local MCP bridge entry to KoDex's `config.toml` if one does not already exist. Each bridge tool call uses the `prompt` approval mode. Existing configuration is preserved.
+
+Python 3 is needed for the bridge. It uses only the Python standard library, communicates over local standard input/output, and does not open a network port.
+
+## Laptop integrations
+
+KoDex can list the engineering integrations it recognizes and the apps registered in the current Windows Start menu. It can open a discovered app by exact display name. Initial task tools cover local task add/list/complete, opening VS Code, Arduino IDE, FreeCAD, and MATLAB, creating a basic FreeCAD box, compiling an Arduino sketch, and running an existing MATLAB `.m` file. Arduino compile does not upload firmware.
+
+MATLAB actions use the MATLAB installation and license already configured on this Windows account. Sign in to MATLAB yourself in its desktop app if needed; KoDex does not collect or store MathWorks credentials. You can work with MATLAB Drive files if they are available through the signed-in app or a local synchronized folder. See MathWorks' [MATLAB batch mode documentation](https://www.mathworks.com/help/matlab/ref/matlabwindows.html) and [MATLAB Drive file access guide](https://www.mathworks.com/help/matlab/matlab_env/access-files-on-matlab-drive.html).
+
+The read-only app catalog may show many apps, but discovery does not grant broad access to them. KoDex exposes an app action only when there is a defined integration or when you ask it to open an exact Start menu entry. Review and approve each tool call. Cloud apps still require their own account sign-in and network access.
+
+## Voice task helper
+
+Run `kodex\Start-KoDexVoice.ps1` to use push-to-talk task coordination. Press Enter, speak “add task …” or “list my tasks,” and the helper saves or reads tasks locally. It does not continuously listen. Windows speech recognition and microphone permission are required; availability depends on installed Windows language components.
 
 ## Local model mode
 
@@ -20,10 +34,4 @@ Install and start a local model provider such as Ollama, download a model while 
 & .\kodex\Start-KoDex.ps1 -LocalModel
 ```
 
-`-LocalModel` passes the engine's `--oss` option. Configure the local provider in `%LOCALAPPDATA%\KoDex\config.toml` (for example `oss_provider = "ollama"`). Once the provider and model are installed locally, inference can run without an internet connection. Initial downloads, updates, external tools, and requests to cloud services still need a network; offline execution is not a guarantee that every feature is local.
-
-With 8 GB RAM, begin with a small quantized model and short context. Larger models can be slow or fail to fit in memory. A local model has no provider token quota, but is limited by the laptop's memory, speed, disk space, and the provider/model license.
-
-## Current scope
-
-This first KoDex change establishes distinct branding, a separate profile, and a local-model launch path. It does not yet add JARVIS voice/task coordination, REA reverse-engineering tools, or FreeCAD/Arduino/VS Code automation. Those need separate integrations and local validation; FreeCAD was not detected on this laptop, while Arduino IDE and VS Code were found.
+`-LocalModel` passes the engine's `--oss` option. Configure the local provider in `%LOCALAPPDATA%\KoDex\config.toml` (for example `oss_provider = "ollama"`). Once the provider and model are installed locally, inference can run without an internet connection. Initial downloads, updates, external tools, and cloud apps still need a network. With 8 GB RAM, begin with a small quantized model; speed and context length depend on memory and the provider/model license.
