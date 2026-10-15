@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import base64
 import ctypes
 import shutil
+import sys
 import subprocess
 import threading
 import tkinter as tk
@@ -78,7 +80,27 @@ STARTER_RESOURCES = [
     ("Robotics", "Robot design, manipulation, navigation, and simulation ideas", "https://github.com/mathworks/MATLAB-Simulink-Challenge-Project-Hub/blob/main/megatrends/Robotics.md"),
     ("Autonomous Vehicles", "Localization, perception, planning, and vehicle control", "https://github.com/mathworks/MATLAB-Simulink-Challenge-Project-Hub/blob/main/megatrends/Autonomous%20Vehicles.md"),
     ("Hackathon-in-a-Box", "Materials and steps for running a 4-6 hour hackathon", "https://github.com/mathworks/hackathon-in-a-box/tree/main"),
+    ("MIT OCW: Introduction to Robotics", "Robot kinematics, motion planning, mechanisms, controls, sensors, and labs", "https://ocw.mit.edu/courses/2-12-introduction-to-robotics-fall-2005/"),
+    ("MIT OCW: Robotic Manipulation", "Perception, manipulation planning, and robot control course materials", "https://ocw.mit.edu/courses/6-4210-robotic-manipulation-fall-2022/"),
+    ("Stanford: Introduction to Robotics", "Open course materials for robotics", "https://see.stanford.edu/Course/CS223A"),
+    ("ROS Documentation", "ROS 2 tutorials and technical documentation", "https://docs.ros.org/en/rolling/"),
+    ("NIST Cybersecurity Framework", "Cybersecurity outcomes and implementation guidance", "https://www.nist.gov/cyberframework"),
+    ("MITRE ATT&CK", "Public knowledge base for defensive threat-informed security", "https://attack.mitre.org/"),
+    ("OWASP Top 10", "Web application security risks and defensive guidance", "https://owasp.org/www-project-top-ten/"),
 ]
+
+RESOURCE_CATEGORIES = {
+    "robotics": "Robotics",
+    "engineering": "Engineering",
+    "steam": "STEAM",
+    "competitions": "Competitions",
+    "competition_robots": "Competition robots",
+    "arduino": "Arduino",
+    "cad": "CAD",
+    "stl_cad": "STL and CAD files",
+    "matlab": "MATLAB",
+    "ros": "ROS",
+}
 
 
 class KoDexDesktop(tk.Tk):
@@ -193,8 +215,96 @@ class KoDexDesktop(tk.Tk):
         compose_tools = ttk.Frame(page, style="Panel.TFrame")
         compose_tools.pack(fill="x", pady=(7, 0))
         ttk.Button(compose_tools, text="Attach workspace file", command=self.attach_workspace_file).pack(side="left")
-        ttk.Label(compose_tools, text="Only an approved project folder can be attached. Ctrl+Enter sends.", background=PANEL, foreground=MUTED).pack(side="left", padx=9)
+        self.voice_button = ttk.Button(compose_tools, text="Dictate", command=self.start_dictation)
+        self.voice_button.pack(side="left", padx=(7, 0))
+        self.speak_replies = tk.BooleanVar(value=False)
+        ttk.Checkbutton(compose_tools, text="Speak replies", variable=self.speak_replies).pack(side="left", padx=7)
+        ttk.Label(compose_tools, text="Voice is push-to-talk. Review the transcript before sending.", background=PANEL, foreground=MUTED).pack(side="left", padx=6)
         self._append_chat("KoDex", "Welcome. I’m a local-first assistant shell. Pick a model in the left panel to start a conversation.")
+
+    def _voice_script_path(self) -> Path:
+        bundle = getattr(sys, "_MEIPASS", None)
+        base = Path(bundle) if bundle else Path(__file__).resolve().parent
+        return base / "KoDexVoiceInput.ps1"
+
+    def start_dictation(self) -> None:
+        if getattr(self, "voice_busy", False):
+            return
+        script = self._voice_script_path()
+        powershell = shutil.which("powershell.exe") or shutil.which("powershell")
+        if not script.is_file() or not powershell:
+            messagebox.showerror("Voice input unavailable", "The KoDex voice helper or Windows PowerShell is missing. Rebuild KoDex from the repository before using voice input.")
+            return
+        self.voice_busy = True
+        self.voice_button.configure(state="disabled", text="Listening…")
+        threading.Thread(target=self._listen_once, args=(powershell, script), daemon=True).start()
+
+    def _listen_once(self, powershell: str, script: Path) -> None:
+        args = [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Action", "Listen"]
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            transcript = result.stdout.strip()
+            error = result.stderr.strip() if result.returncode else ""
+            if result.returncode and not error:
+                error = "Windows speech recognition did not complete. Check microphone permission and an installed speech language."
+            self.after(0, lambda text=transcript, detail=error: self._voice_finished(text, detail))
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            self.after(0, lambda detail=str(exc): self._voice_finished("", detail))
+
+    def _voice_finished(self, transcript: str, error: str) -> None:
+        self.voice_busy = False
+        self.voice_button.configure(state="normal", text="Dictate")
+        if error:
+            self._append_chat("KoDex voice", f"Voice input could not complete: {error}")
+            return
+        transcript = transcript.strip()
+        if not transcript:
+            self._append_chat("KoDex voice", "I did not catch anything. Try Dictate again.")
+            return
+        command = transcript.casefold()
+        if command.startswith("add task "):
+            title = transcript[9:].strip()
+            if title:
+                try:
+                    task = bridge.add_task(title)
+                    self.refresh_tasks()
+                    self._append_chat("KoDex voice", f"Added task {task['id']}: {task['title']}")
+                    self._speak_reply(f"Task added: {task['title']}")
+                except Exception as exc:
+                    self._append_chat("KoDex voice", f"Could not add task: {exc}")
+                return
+        if command in {"list tasks", "list my tasks", "show tasks", "show my tasks", "read my tasks"}:
+            tasks = bridge.list_tasks()
+            summary = "You have no open tasks." if not tasks else "Open tasks: " + "; ".join(f"{item['id']}: {item['title']}" for item in tasks[:10])
+            self._append_chat("KoDex voice", summary)
+            self._speak_reply(summary)
+            return
+        if command.startswith("complete task "):
+            task_id = transcript[len("complete task "):].strip().upper()
+            try:
+                task = bridge.complete_task(task_id)
+                self.refresh_tasks()
+                message = f"Completed task {task['id']}: {task['title']}"
+                self._append_chat("KoDex voice", message)
+                self._speak_reply(message)
+            except Exception as exc:
+                self._append_chat("KoDex voice", f"Could not complete that task: {exc}")
+            return
+        self._show_page("chat")
+        self.prompt.insert("end", transcript)
+        self.prompt.focus_set()
+        self._append_chat("KoDex voice", f"Transcript ready to review: {transcript}")
+
+    def _speak_reply(self, text: str) -> None:
+        if not getattr(self, "speak_replies", None) or not self.speak_replies.get():
+            return
+        powershell = shutil.which("powershell.exe") or shutil.which("powershell")
+        script = self._voice_script_path()
+        if not powershell or not script.is_file():
+            return
+        encoded = base64.b64encode(text[:1000].encode("utf-8")).decode("ascii")
+        args = [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Action", "Speak"]
+        threading.Thread(target=lambda: subprocess.run(args, input=encoded, capture_output=True, text=True, timeout=90, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)), daemon=True).start()
 
     def _load_allowed_roots(self) -> list[Path]:
         try:
@@ -681,6 +791,7 @@ class KoDexDesktop(tk.Tk):
                 self.history.pop()
         else:
             self._append_chat("KoDex", answer)
+            self._speak_reply(answer)
         self.send_button.configure(state="normal", text="Send")
 
     def refresh_models(self) -> None:
@@ -704,6 +815,16 @@ class KoDexDesktop(tk.Tk):
             self.status.configure(text=f"Local Ollama · {len(names)} model(s)" if not error else "Local model offline · open Ollama to start")
         self.provider_models["Local Ollama"] = self.model.get().strip() if self.provider.get() == "Local Ollama" else self.provider_models.get("Local Ollama", "")
 
+    def _ollama_cli(self) -> str | None:
+        configured = os.environ.get("OLLAMA_EXE")
+        candidates = [configured] if configured else []
+        candidates.extend([
+            shutil.which("ollama"),
+            str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"),
+            str(Path.home() / "Documents" / "Codex" / "KoDexTools" / "Ollama" / "ollama.exe"),
+        ])
+        return next((candidate for candidate in candidates if candidate and Path(candidate).is_file()), None)
+
     def open_ollama(self) -> None:
         local = Path(os.environ.get("LOCALAPPDATA", ""))
         candidates = [local / "Programs" / "Ollama" / "ollama app.exe"]
@@ -712,7 +833,19 @@ class KoDexDesktop(tk.Tk):
                 subprocess.Popen([str(app)], close_fds=True)
                 self.after(900, self.refresh_models)
                 return
-        messagebox.showerror("Ollama not found", "Install Ollama or open it from the Windows Start menu.")
+        executable = self._ollama_cli()
+        if executable:
+            env = os.environ.copy()
+            env.setdefault("OLLAMA_MODELS", str(Path.home() / ".ollama" / "models"))
+            try:
+                subprocess.Popen([executable, "serve"], cwd=str(Path(executable).parent), env=env, close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                self.status.configure(text="Starting local Ollama…")
+                self.after(1500, self.refresh_models)
+                return
+            except OSError as exc:
+                messagebox.showerror("Could not start Ollama", str(exc))
+                return
+        messagebox.showerror("Ollama not found", "Install Ollama or select a local Ollama installation, then try again.")
 
     def _tasks_page(self) -> None:
         page = ttk.Frame(self.content, style="Panel.TFrame")
@@ -791,15 +924,138 @@ class KoDexDesktop(tk.Tk):
     def _resources_page(self) -> None:
         page = ttk.Frame(self.content, style="Panel.TFrame")
         self.pages["resources"] = page
-        self._page_header(page, "Project resources", "Starter material from MathWorks for robotics, UAV, autonomous vehicle, and student competition projects. Internet is needed to visit a link.")
-        for title, description, url in STARTER_RESOURCES:
-            card = ttk.Frame(page, style="Panel.TFrame", padding=(12, 10))
-            card.pack(fill="x", pady=5)
-            ttk.Label(card, text=title, background=PANEL, foreground=TEXT, font=("Segoe UI Semibold", 11)).pack(anchor="w")
-            ttk.Label(card, text=description, background=PANEL, foreground=MUTED, wraplength=680).pack(anchor="w", pady=(3, 7))
-            link = ttk.Label(card, text=url, background=PANEL, foreground=ACCENT, cursor="hand2", wraplength=700)
-            link.pack(anchor="w")
+        self._page_header(page, "Project resources", "Search public GitHub repos for robotics, engineering, STEAM, competitions, and CAD. Review a repo and its license before cloning it.")
+        controls = ttk.Frame(page, style="Panel.TFrame")
+        controls.pack(fill="x", pady=(0, 8))
+        self.resource_category = tk.StringVar(value=RESOURCE_CATEGORIES["robotics"])
+        category_box = ttk.Combobox(controls, textvariable=self.resource_category, state="readonly", values=list(RESOURCE_CATEGORIES.values()), width=22)
+        category_box.pack(side="left")
+        self.resource_query = tk.StringVar()
+        ttk.Entry(controls, textvariable=self.resource_query).pack(side="left", fill="x", expand=True, padx=7)
+        self.resource_search_button = ttk.Button(controls, text="Search public GitHub", style="Accent.TButton", command=self.search_resource_repositories)
+        self.resource_search_button.pack(side="left")
+        self.resource_tree = ttk.Treeview(page, columns=("stars", "license", "updated"), show="tree headings", selectmode="browse", height=7)
+        self.resource_tree.heading("#0", text="REPOSITORY")
+        self.resource_tree.heading("stars", text="STARS")
+        self.resource_tree.heading("license", text="LICENSE")
+        self.resource_tree.heading("updated", text="LAST PUSHED")
+        self.resource_tree.column("#0", width=350)
+        self.resource_tree.column("stars", width=80, stretch=False, anchor="e")
+        self.resource_tree.column("license", width=110, stretch=False)
+        self.resource_tree.column("updated", width=130, stretch=False)
+        self.resource_tree.pack(fill="both", expand=True)
+        self.resource_tree.bind("<<TreeviewSelect>>", self._resource_selected)
+        self.resource_detail = ttk.Label(page, text="Search public repositories, or view CAD files already downloaded in KoDex resources.", background=PANEL, foreground=MUTED, wraplength=750)
+        self.resource_detail.pack(anchor="w", pady=(7, 5))
+        actions = ttk.Frame(page, style="Panel.TFrame")
+        actions.pack(fill="x", pady=(0, 8))
+        ttk.Button(actions, text="Open selected repo", command=self.open_selected_resource).pack(side="left")
+        ttk.Button(actions, text="Clone selected repo…", command=self.clone_selected_resource).pack(side="left", padx=7)
+        ttk.Button(actions, text="Show downloaded CAD files", command=self.show_local_design_files).pack(side="left")
+        self.resource_status = ttk.Label(actions, text="Internet is needed for GitHub search and cloning.", background=PANEL, foreground=MUTED)
+        self.resource_status.pack(side="left", padx=8)
+        resources = ttk.LabelFrame(page, text="University, robotics, and cybersecurity materials", padding=8)
+        resources.pack(fill="x", pady=(3, 0))
+        for i, (title, _description, url) in enumerate(STARTER_RESOURCES):
+            link = ttk.Label(resources, text=title, background=PANEL, foreground=ACCENT, cursor="hand2", wraplength=330)
+            link.grid(row=i // 4, column=i % 4, sticky="w", padx=6, pady=3)
             link.bind("<Button-1>", lambda _event, target=url: webbrowser.open(target))
+        for col in range(4):
+            resources.columnconfigure(col, weight=1)
+        self.resource_repositories: list[dict[str, Any]] = []
+
+    def search_resource_repositories(self) -> None:
+        category = next((key for key, label in RESOURCE_CATEGORIES.items() if label == self.resource_category.get()), "")
+        if category not in RESOURCE_CATEGORIES:
+            messagebox.showerror("Choose a category", "Select a GitHub resource category first.")
+            return
+        query = self.resource_query.get().strip()
+        self.resource_search_button.configure(state="disabled", text="Searching…")
+        self.resource_status.configure(text="Searching public GitHub repositories…")
+        def worker() -> None:
+            try:
+                result = bridge.github_resource_search(category, query=query, limit=12, sort="stars")
+                self.after(0, lambda data=result: self._resource_search_finished(data, None))
+            except Exception as exc:
+                self.after(0, lambda error=str(exc): self._resource_search_finished(None, error))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _resource_search_finished(self, result: dict[str, Any] | None, error: str | None) -> None:
+        self.resource_search_button.configure(state="normal", text="Search public GitHub")
+        self.resource_tree.delete(*self.resource_tree.get_children())
+        self.resource_repositories = []
+        if error:
+            self.resource_status.configure(text="GitHub search failed")
+            self.resource_detail.configure(text=error[:500])
+            return
+        self.resource_repositories = list((result or {}).get("repositories", []))
+        for index, repo in enumerate(self.resource_repositories):
+            pushed = str(repo.get("updated_at") or "")[:10]
+            self.resource_tree.insert("", "end", iid=str(index), text=repo.get("full_name", ""), values=(repo.get("stars", 0), repo.get("license") or "Unknown", pushed))
+        total = (result or {}).get("total_count", 0)
+        cached = " · cached" if (result or {}).get("cached") else ""
+        self.resource_status.configure(text=f"Showing {len(self.resource_repositories)} of {total} public repos{cached}")
+        self.resource_detail.configure(text="Select a repo to inspect its summary and license. KoDex only clones after you approve; downloaded code is not run.")
+
+    def _selected_resource(self) -> dict[str, Any] | None:
+        selection = self.resource_tree.selection()
+        if not selection:
+            return None
+        try:
+            return self.resource_repositories[int(selection[0])]
+        except (IndexError, ValueError):
+            return None
+
+    def _resource_selected(self, _event: tk.Event[Any] | None = None) -> None:
+        repo = self._selected_resource()
+        if repo:
+            description = repo.get("description") or "No description provided."
+            topics = ", ".join(repo.get("topics", [])[:5])
+            self.resource_detail.configure(text=f"{description}  License: {repo.get('license') or 'unknown'}  Topics: {topics or 'none'}")
+
+    def open_selected_resource(self) -> None:
+        repo = self._selected_resource()
+        if repo and repo.get("url"):
+            webbrowser.open(repo["url"])
+
+    def clone_selected_resource(self) -> None:
+        repo = self._selected_resource()
+        if not repo:
+            messagebox.showinfo("Select a repository", "Choose a repository first.")
+            return
+        full_name = str(repo.get("full_name", ""))
+        if not messagebox.askyesno("Clone public repository?", f"Clone {full_name} into KoDex resources? Review its files and license before using it. KoDex will not run the downloaded code."):
+            return
+        self.resource_status.configure(text=f"Cloning {full_name}…")
+        def worker() -> None:
+            try:
+                result = bridge.github_clone_public_repository(full_name)
+                self.after(0, lambda data=result: self._resource_clone_finished(data, None))
+            except Exception as exc:
+                self.after(0, lambda error=str(exc): self._resource_clone_finished(None, error))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _resource_clone_finished(self, result: dict[str, Any] | None, error: str | None) -> None:
+        if error:
+            self.resource_status.configure(text=f"Clone failed: {error[:160]}")
+            return
+        data = result or {}
+        self.resource_status.configure(text=f"Cloned {data.get('repository')} · {data.get('design_file_count_in_first_100', 0)} CAD/mesh files")
+        self.resource_detail.configure(text=f"Saved to {data.get('local_path')}. No project code was run.")
+
+    def show_local_design_files(self) -> None:
+        try:
+            result = bridge.local_design_files(limit=100)
+        except Exception as exc:
+            messagebox.showerror("Could not list local designs", str(exc))
+            return
+        files = result.get("files", [])
+        self.resource_tree.delete(*self.resource_tree.get_children())
+        self.resource_repositories = []
+        for index, item in enumerate(files):
+            self.resource_tree.insert("", "end", iid=str(index), text=item.get("name", ""), values=("", item.get("format", ""), item.get("repository", "")))
+        self.resource_status.configure(text=f"{result.get('count', 0)} CAD/mesh files under {result.get('resource_directory')}")
+        self.resource_detail.configure(text="Local designs are listed only. KoDex does not execute or automatically open downloaded CAD files.")
 
     def _show_page(self, key: str) -> None:
         for page in self.pages.values():

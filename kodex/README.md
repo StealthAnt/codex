@@ -16,17 +16,18 @@ Python 3 is needed for the bridge. It uses only the Python standard library, com
 
 ## Standalone desktop MVP
 
-The Windows build is at `kodex\dist\KoDex.exe`. Run it directly, or rebuild from source with `Start-KoDex-Desktop.ps1`:
+The Windows build is at `kodex\dist\KoDex.exe`. Run it directly. To rebuild from the repository root, install PyInstaller and use the portable spec:
 
 ```powershell
-& .\kodex\Start-KoDex-Desktop.ps1
+python -m pip install pyinstaller
+pyinstaller kodex\build\KoDex.spec --noconfirm --clean --distpath kodex\dist --workpath kodex\build\pyinstaller
 ```
 
-This Windows desktop UI is separate from the official Codex app. It includes local Ollama chat, optional ChatGPT access through the signed-in Codex CLI, Claude and Qwen API backends, a Claude Code CLI adapter, approved project folders, a task list, engineering app launch buttons, MathWorks project links, and the brain-network-with-light icon. The packaged executable includes its Python runtime. Chat works offline when Ollama is running and its model has already been downloaded.
+This Windows desktop UI is separate from the official Codex app. It includes local Ollama chat, optional ChatGPT access through the signed-in Codex CLI, Claude and Qwen API backends, a Claude Code CLI adapter, approved project folders, a task list, engineering app launch buttons, public GitHub repository search and cloning, downloadable CAD/mesh file discovery, university and cybersecurity learning links, and the brain-network-with-light icon. The packaged executable includes its Python runtime. Chat works offline when Ollama is running and its model has already been downloaded.
 
 ChatGPT uses the installed Codex CLI account session, runs in an ephemeral session, and starts with read-only sandbox access. Claude API and Qwen API require their own provider keys; KoDex encrypts saved keys with Windows DPAPI for the signed-in Windows account. Cloud requests send the current conversation to that provider and may be billed or limited under the provider's account. Qwen API keys are region-bound, so its base URL must match the key. Claude Code uses the installed `claude` CLI and its own OAuth sign-in in plan mode; it is unavailable until that CLI is installed. API keys are entered inside KoDex and are never requested in chat.
 
-The Workspace page grants selected folders and lets the user attach UTF-8 text files up to 200 KB. ChatGPT and Claude Code are limited to read-only mode in the current desktop shell; KoDex does not yet apply generated edits or run commands from chat. Voice task coordination remains available through `Start-KoDexVoice.ps1`, but is not integrated into the desktop chat yet. The REA tools available to the coding session are not bundled in KoDex.
+The Workspace page grants selected folders and lets the user attach UTF-8 text files up to 200 KB. ChatGPT and Claude Code are limited to read-only mode in the current desktop shell; KoDex does not yet apply generated edits or run commands from chat. The desktop chat supports push-to-talk dictation, optional spoken replies, and local voice commands to add, list, or complete tasks. It does not listen continuously. Windows speech recognition and microphone access are required. The separate `Start-KoDexVoice.ps1` helper also supports task completion. The REA tools available to the coding session are not bundled in KoDex.
 
 ## Laptop integrations
 
@@ -38,7 +39,7 @@ The read-only app catalog may show many apps, but discovery does not grant broad
 
 ## GitHub engineering resources
 
-KoDex can search public GitHub repositories by robotics, engineering, STEAM, competitions, competition robots, Arduino, CAD/STL, MATLAB, or ROS. Results show links, descriptions, stars, recent activity, topics, and license labels. Search needs internet access and uses GitHub's unauthenticated API; GitHub applies rate limits, with search endpoints more restrictive than general API requests. KoDex caches results locally for 15 minutes. Private repositories are not accessed.
+KoDex can search public GitHub repositories by robotics, engineering, STEAM, competitions, competition robots, Arduino, CAD/STL, MATLAB, or ROS. Results show links, descriptions, stars, recent activity, topics, and license labels. Search needs internet access and uses GitHub's unauthenticated API; GitHub applies rate limits, with search endpoints more restrictive than general API requests. KoDex caches results locally for 15 minutes. Private repositories are not accessed. The resources page also links to MIT OpenCourseWare, Stanford Engineering, ROS, NIST, MITRE ATT&CK, and OWASP materials.
 
 After reviewing a result, you can approve a separate action to clone that public repository into `%LOCALAPPDATA%\KoDex\resources`. KoDex can then list STL, STEP/STP, FCStd, SCAD, OBJ, 3MF, and IGES files in those local copies. It does not run downloaded scripts or open CAD/mesh assets automatically. Review the repository, license, and design before using it in a project or competition. See GitHub's [REST API rate limit documentation](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
 
@@ -48,10 +49,10 @@ Run `kodex\Start-KoDexVoice.ps1` to use push-to-talk task coordination. Press En
 
 ## Local model mode
 
-Install and start a local model provider such as Ollama, download a model while online, then launch:
+KoDex can start the Ollama API from a local CLI installation, then use a downloaded model:
 
 ```powershell
-& .\kodex\Start-KoDex.ps1 -LocalModel
+& .\kodex\Start-KoDex-Desktop.ps1
 ```
 
-`-LocalModel` passes the engine's `--oss` option. Configure the local provider in `%LOCALAPPDATA%\KoDex\config.toml` (for example `oss_provider = "ollama"`). Once the provider and model are installed locally, inference can run without an internet connection. Initial downloads, updates, external tools, and cloud apps still need a network. With 8 GB RAM, begin with a small quantized model; speed and context length depend on memory and the provider/model license.
+The desktop offers `Open Ollama` to start the installed or recognized portable CLI, then select its model in the provider picker. Once a model is installed locally, inference can run without internet access. Initial downloads, updates, external tools, and cloud providers still need a network. With 8 GB RAM, use a small quantized model; performance and context length depend on available memory and other running apps.
