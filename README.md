@@ -1,7 +1,6 @@
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
-<p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
-</p>
+> **KoDex personal fork:** this repository is maintained by StealthAnt and is not the official OpenAI Codex app. The KoDex launcher and setup notes are in [`kodex/`](./kodex/). Upstream Codex source and license notices are retained below.
+
+<p align="center"><strong>KoDex</strong> is a personal coding assistant fork based on the OpenAI Codex CLI engine.</p>
 </br>
 If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
 </br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
