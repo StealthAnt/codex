@@ -22,9 +22,11 @@ The Windows build is at `kodex\dist\KoDex.exe`. Run it directly, or rebuild from
 & .\kodex\Start-KoDex-Desktop.ps1
 ```
 
-This Windows desktop UI is separate from the official Codex app. It includes local Ollama chat, a task list, one-click launch buttons for VS Code/Arduino IDE/FreeCAD/MATLAB, MathWorks project links, and a brain-network-with-light icon. The packaged executable includes its Python runtime. Chat works offline when Ollama is running and its model has already been downloaded. Open Ollama and install a model first if none appears in the model selector.
+This Windows desktop UI is separate from the official Codex app. It includes local Ollama chat, optional ChatGPT access through the signed-in Codex CLI, Claude and Qwen API backends, a Claude Code CLI adapter, approved project folders, a task list, engineering app launch buttons, MathWorks project links, and the brain-network-with-light icon. The packaged executable includes its Python runtime. Chat works offline when Ollama is running and its model has already been downloaded.
 
-This is the first runnable desktop shell. Voice, REA, richer CAD/robotics workflows, academic open course catalogs, and broader security resources remain later additions.
+ChatGPT uses the installed Codex CLI account session, runs in an ephemeral session, and starts with read-only sandbox access. Claude API and Qwen API require their own provider keys; KoDex encrypts saved keys with Windows DPAPI for the signed-in Windows account. Cloud requests send the current conversation to that provider and may be billed or limited under the provider's account. Qwen API keys are region-bound, so its base URL must match the key. Claude Code uses the installed `claude` CLI and its own OAuth sign-in in plan mode; it is unavailable until that CLI is installed. API keys are entered inside KoDex and are never requested in chat.
+
+The Workspace page grants selected folders and lets the user attach UTF-8 text files up to 200 KB. ChatGPT and Claude Code are limited to read-only mode in the current desktop shell; KoDex does not yet apply generated edits or run commands from chat. Voice task coordination remains available through `Start-KoDexVoice.ps1`, but is not integrated into the desktop chat yet. The REA tools available to the coding session are not bundled in KoDex.
 
 ## Laptop integrations
 
