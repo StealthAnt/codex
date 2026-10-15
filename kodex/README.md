@@ -22,6 +22,12 @@ MATLAB actions use the MATLAB installation and license already configured on thi
 
 The read-only app catalog may show many apps, but discovery does not grant broad access to them. KoDex exposes an app action only when there is a defined integration or when you ask it to open an exact Start menu entry. Review and approve each tool call. Cloud apps still require their own account sign-in and network access.
 
+## GitHub engineering resources
+
+KoDex can search public GitHub repositories by robotics, engineering, STEAM, competitions, competition robots, Arduino, CAD/STL, MATLAB, or ROS. Results show links, descriptions, stars, recent activity, topics, and license labels. Search needs internet access and uses GitHub's unauthenticated API; GitHub applies rate limits, with search endpoints more restrictive than general API requests. KoDex caches results locally for 15 minutes. Private repositories are not accessed.
+
+After reviewing a result, you can approve a separate action to clone that public repository into `%LOCALAPPDATA%\KoDex\resources`. KoDex can then list STL, STEP/STP, FCStd, SCAD, OBJ, 3MF, and IGES files in those local copies. It does not run downloaded scripts or open CAD/mesh assets automatically. Review the repository, license, and design before using it in a project or competition. See GitHub's [REST API rate limit documentation](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+
 ## Voice task helper
 
 Run `kodex\Start-KoDexVoice.ps1` to use push-to-talk task coordination. Press Enter, speak “add task …” or “list my tasks,” and the helper saves or reads tasks locally. It does not continuously listen. Windows speech recognition and microphone permission are required; availability depends on installed Windows language components.

@@ -10,10 +10,15 @@ import argparse
 from datetime import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -30,6 +35,160 @@ def kodex_home() -> Path:
 
 def task_file() -> Path:
     return kodex_home() / "tasks.json"
+
+
+GITHUB_CATEGORIES = {
+    "robotics": "topic:robotics",
+    "engineering": "topic:engineering",
+    "steam": "topic:steam",
+    "competitions": "topic:competition",
+    "competition_robots": "robot competition",
+    "arduino": "topic:arduino",
+    "cad": "topic:cad",
+    "stl_cad": "STL CAD 3D-printable",
+    "matlab": "topic:matlab",
+    "ros": "topic:ros",
+}
+
+DESIGN_SUFFIXES = {".stl", ".step", ".stp", ".fcstd", ".scad", ".obj", ".3mf", ".iges", ".igs"}
+
+
+def github_resource_search(category: str, query: str = "", limit: int = 10, sort: str = "stars") -> dict[str, Any]:
+    """Search public GitHub repositories. Does not authenticate or access private repos."""
+    if category not in GITHUB_CATEGORIES:
+        raise ValueError("Choose a category: robotics, engineering, steam, competitions, competition_robots, arduino, cad, stl_cad, matlab, or ros.")
+    if len(query) > 120 or any(ord(char) < 32 for char in query):
+        raise ValueError("Search text must be at most 120 printable characters.")
+    if not 1 <= limit <= 20:
+        raise ValueError("limit must be between 1 and 20.")
+    if sort not in {"stars", "updated"}:
+        raise ValueError("sort must be stars or updated.")
+    terms = f"{GITHUB_CATEGORIES[category]} is:public archived:false"
+    if query.strip():
+        terms = f"{query.strip()} {terms}"
+    cache_path = kodex_home() / "github_resource_cache.json"
+    cache_key = json.dumps([category, query.strip(), limit, sort], ensure_ascii=False)
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        cached = {}
+    if not isinstance(cached, dict):
+        cached = {}
+    cached_item = cached.get(cache_key) if isinstance(cached, dict) else None
+    if isinstance(cached_item, dict) and time.time() - cached_item.get("saved_at", 0) < 900:
+        return {**cached_item["data"], "cached": True}
+
+    params = urllib.parse.urlencode({"q": terms, "sort": sort, "order": "desc", "per_page": limit})
+    request = urllib.request.Request(
+        "https://api.github.com/search/repositories?" + params,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "KoDex-local-resource-finder", "X-GitHub-Api-Version": "2022-11-28"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            remaining = response.headers.get("X-RateLimit-Remaining")
+    except urllib.error.HTTPError as exc:
+        if exc.code in {403, 429}:
+            reset = exc.headers.get("X-RateLimit-Reset")
+            raise RuntimeError(f"GitHub search is rate-limited. Try again later (reset epoch: {reset or 'not provided'}).") from exc
+        raise RuntimeError(f"GitHub repository search failed with HTTP {exc.code}.") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError(f"Could not reach GitHub: {exc}.") from exc
+
+    repos = []
+    for item in payload.get("items", []):
+        repos.append({
+            "full_name": item.get("full_name"),
+            "description": item.get("description"),
+            "url": item.get("html_url"),
+            "clone_url": item.get("clone_url"),
+            "language": item.get("language"),
+            "stars": item.get("stargazers_count", 0),
+            "forks": item.get("forks_count", 0),
+            "updated_at": item.get("pushed_at"),
+            "topics": item.get("topics", []),
+            "license": (item.get("license") or {}).get("spdx_id"),
+            "archived": item.get("archived", False),
+        })
+    data = {
+        "category": category,
+        "query": query.strip(),
+        "total_count": payload.get("total_count", 0),
+        "repositories": repos,
+        "rate_limit_remaining": int(remaining) if remaining and remaining.isdigit() else None,
+        "cached": False,
+        "note": "Public repository metadata only. Review a project's license, maintenance, and code before using it.",
+    }
+    cached[cache_key] = {"saved_at": time.time(), "data": data}
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix="github-search-", suffix=".tmp", dir=cache_path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as temp:
+            json.dump(cached, temp, ensure_ascii=False, indent=2)
+            temp.write("\n")
+        os.replace(temp_name, cache_path)
+    finally:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+    return data
+
+
+def local_design_files(limit: int = 100) -> dict[str, Any]:
+    """List common CAD/mesh files in KoDex resource clones; never opens or executes them."""
+    if not 1 <= limit <= 500:
+        raise ValueError("limit must be between 1 and 500.")
+    root = kodex_home() / "resources"
+    files = []
+    if root.is_dir():
+        for path in root.rglob("*"):
+            if path.is_file() and path.suffix.casefold() in DESIGN_SUFFIXES:
+                files.append({"name": path.name, "format": path.suffix, "path": str(path), "repository": str(path.relative_to(root).parts[0])})
+                if len(files) >= limit:
+                    break
+    return {"resource_directory": str(root), "count": len(files), "files": files, "note": "Files are listed only; KoDex does not execute or open downloaded design files."}
+
+
+def github_clone_public_repository(full_name: str) -> dict[str, Any]:
+    """Clone one public GitHub repository into KoDex's dedicated resources directory."""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", full_name.strip()):
+        raise ValueError("Provide a GitHub repository as owner/name (not a URL).")
+    if full_name.strip().startswith("-") or "/../" in full_name:
+        raise ValueError("Invalid GitHub repository name.")
+    git = shutil.which("git")
+    if not git:
+        raise ValueError("Git was not found on PATH.")
+    owner, repo = full_name.strip().split("/", 1)
+    destination = kodex_home() / "resources" / f"{owner}__{repo.removesuffix('.git')}"
+    if destination.exists():
+        raise ValueError(f"This resource already exists locally: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(
+            [git, "clone", "--depth", "1", "--", f"https://github.com/{owner}/{repo.removesuffix('.git')}.git", str(destination)],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("GitHub clone timed out after 10 minutes; partial checkout may need manual removal.") from exc
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout)[-5000:] or "Git clone failed.")
+    design_files = []
+    for path in destination.rglob("*"):
+        if path.is_file() and path.suffix.casefold() in DESIGN_SUFFIXES:
+            design_files.append({"name": path.name, "format": path.suffix, "path": str(path.relative_to(destination))})
+            if len(design_files) >= 100:
+                break
+    return {
+        "repository": f"{owner}/{repo.removesuffix('.git')}",
+        "local_path": str(destination),
+        "design_file_count_in_first_100": len(design_files),
+        "design_files": design_files,
+        "note": "Cloned source and assets only. KoDex has not run project code; inspect the repository license and contents before use.",
+    }
 
 
 @contextmanager
@@ -349,6 +508,9 @@ def matlab_run(script_path: str, timeout_seconds: int = 300) -> dict[str, Any]:
 
 
 TOOLS: list[dict[str, Any]] = [
+    {"name": "kodex_github_search_repositories", "description": "Search public GitHub repositories for robotics, engineering, STEAM, competition robot designs, STL/CAD, Arduino, MATLAB, or ROS projects. Read-only; results include stars, activity, topics, and license metadata.", "inputSchema": {"type": "object", "properties": {"category": {"type": "string", "enum": list(GITHUB_CATEGORIES)}, "query": {"type": "string", "maxLength": 120}, "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}, "sort": {"type": "string", "enum": ["stars", "updated"], "default": "stars"}}, "required": ["category"], "additionalProperties": False}},
+    {"name": "kodex_github_clone_public_repository", "description": "Clone one public GitHub repository by owner/name into KoDex's local resources folder. Clones files only; does not run code. Approval is required.", "inputSchema": {"type": "object", "properties": {"full_name": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"}}, "required": ["full_name"], "additionalProperties": False}},
+    {"name": "kodex_resource_find_design_files", "description": "List STL, STEP, FreeCAD, OpenSCAD, OBJ, 3MF, and IGES files in cloned KoDex resources. Does not open or execute them.", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}, "additionalProperties": False}},
     {"name": "kodex_task_add", "description": "Save a task in KoDex's local task list.", "inputSchema": {"type": "object", "properties": {"title": {"type": "string", "minLength": 1}}, "required": ["title"], "additionalProperties": False}},
     {"name": "kodex_task_list", "description": "List open KoDex tasks, or include completed tasks.", "inputSchema": {"type": "object", "properties": {"include_done": {"type": "boolean", "default": False}}, "additionalProperties": False}},
     {"name": "kodex_task_complete", "description": "Mark a KoDex task complete by its KDX ID.", "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"], "additionalProperties": False}},
@@ -362,6 +524,12 @@ TOOLS: list[dict[str, Any]] = [
 
 
 def call_tool(name: str, args: dict[str, Any]) -> Any:
+    if name == "kodex_github_search_repositories":
+        return github_resource_search(args["category"], args.get("query", ""), int(args.get("limit", 10)), args.get("sort", "stars"))
+    if name == "kodex_github_clone_public_repository":
+        return github_clone_public_repository(args["full_name"])
+    if name == "kodex_resource_find_design_files":
+        return local_design_files(int(args.get("limit", 100)))
     if name == "kodex_task_add":
         return add_task(args["title"])
     if name == "kodex_task_list":
